@@ -1,0 +1,66 @@
+# >>> Node.js (Frontend) <<<
+
+node_modules/
+dist/
+.vite/
+.env
+.env.local
+npm-debug.log*
+
+# >>> Python (Backend) <<<
+
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+env/
+.env/
+pip-log.txt
+
+# >>> TensorFlow Modelle & Trainingsdaten <<<
+
+*.h5
+*.hdf5
+*.pb
+*.ckpt
+*.tflite
+
+# >>> VSCode & IDEs <<<
+
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# >>> OS / System <<<
+
+.DS_Store
+Thumbs.db
+
+# >>> Git <<<
+
+*.log
+*.tmp
+*.bak
+*.swp
+*.lock
+
+# >>> Frontend Build Output <<<
+
+frontend/build/
+frontend/node_modules/
+frontend/dist/
+
+# >>> Backend Python Build Output <<<
+
+backend/__pycache__/
+backend/venv/
+backend/.venv/
+backend/build/
+backend/dist/
+test
