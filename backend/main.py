@@ -184,35 +184,42 @@ async def get_stock(ticker: str, interval: str = Query(default="1d")):
         raise HTTPException(status_code=500, detail=f"Serverfehler: {str(e)}")
 # Einfaches KI Modell
 # Einfaches Basic Modell
-@app.get("/detect_basic/{ticker}")
-async def detect_basic(ticker: str):
+@app.get("/detect_real/{ticker}")
+async def detect_real(ticker: str):
     try:
-        if model_basic is None:
-            raise HTTPException(status_code=501, detail="Basic Modell nicht verfügbar")
+        if model_real is None:
+            raise HTTPException(status_code=501, detail="Echtes Modell nicht verfügbar")
 
-        data = yf.download(ticker, period="10y", interval="1wk", auto_adjust=True)
+        data = yf.download(ticker, period="6mo", interval="1d", auto_adjust=True)
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.droplevel(1)
 
-        if data.empty:
-            raise HTTPException(status_code=400, detail="Keine Daten verfügbar")
+        if data.empty or len(data) < 50:
+            raise HTTPException(status_code=400, detail="Keine gültigen Daten")
 
         required_columns = ['Open', 'High', 'Low', 'Close']
         data = data.dropna(subset=required_columns)
-        if len(data) < 50:
-            raise HTTPException(status_code=400, detail="Nicht genügend Daten")
 
         X = data[required_columns].values[-50:].reshape(1, 50, 4)
-        prediction = model_basic.predict(X)
-        confidence = float(prediction[0][0])
+        prediction = model_real.predict(X)
+        prediction_class = np.argmax(prediction)
+
+        classes = {0: "Kein Muster", 1: "Double Bottom", 2: "Wedge", 3: "Head and Shoulders"}
+
+        # Start und Enddatum (z.B. die letzten 50 Tage)
+        start_date = data.index[-50].strftime('%Y-%m-%d')
+        end_date = data.index[-1].strftime('%Y-%m-%d')
 
         return {
-            "pattern": "Head and Shoulders" if confidence > 0.5 else "No pattern",
-            "confidence": confidence,
-            "entry_point": float(data['Close'].iloc[-1])
+            "pattern": classes.get(prediction_class, "Unbekannt"),
+            "confidence": float(np.max(prediction)),
+            "entry_point": float(data['Close'].iloc[-1]),
+            "start_date": start_date,
+            "end_date": end_date
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # Multimuster Dummy Modell
 @app.get("/detect_multi/{ticker}")
