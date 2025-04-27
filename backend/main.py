@@ -82,7 +82,6 @@ async def get_stock(ticker: str, interval: str = "1d"):
 
     data = data.reset_index()
 
-    # Nur die wichtigen Spalten
     keep_columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
     available_columns = [col for col in keep_columns if col in data.columns]
     data = data[available_columns]
@@ -98,16 +97,20 @@ async def get_stock(ticker: str, interval: str = "1d"):
         loss = -delta.clip(upper=0).rolling(window=14).mean()
         rs = gain / loss
         data['RSI_14'] = 100 - (100 / (1 + rs))
+
+        # EMA 14 und EMA 50 (neu!)
+        data['EMA_14'] = data['Close'].ewm(span=14, adjust=False).mean()
+        data['EMA_50'] = data['Close'].ewm(span=50, adjust=False).mean()
     else:
         data['SMA_14'] = None
         data['RSI_14'] = None
+        data['EMA_14'] = None
+        data['EMA_50'] = None
 
-    # GANZ WICHTIG: infinities + NaN explizit durch None ersetzen
     import numpy as np
     data = data.replace([np.inf, -np.inf], np.nan)
     data = data.fillna(value=np.nan)
 
-    # Umwandlung sicher machen
     def safe_float(val):
         if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
             return None
@@ -129,9 +132,13 @@ async def get_stock(ticker: str, interval: str = "1d"):
             "Volume": safe_int(row.get("Volume")),
             "SMA_14": safe_float(row.get("SMA_14")),
             "RSI_14": safe_float(row.get("RSI_14")),
+            "EMA_14": safe_float(row.get("EMA_14")),
+            "EMA_50": safe_float(row.get("EMA_50")),
         })
 
     return result
+
+
 
 
 @app.get("/analyze/{ticker}")
