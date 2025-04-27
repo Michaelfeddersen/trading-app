@@ -1,3 +1,13 @@
 echo "frontend/node_modules/" >> .gitignore
 echo "frontend/dist/" >> .gitignore
 echo ".env" >> .gitignore
+
+# Entwicklungsumgebung
+.DS_Store
+.env.local
+.env.development
+.env.production
+
+# Build-Verzeichnisse
+dist/
+build/
