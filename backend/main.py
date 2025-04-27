@@ -9,8 +9,10 @@ app = FastAPI()
 # CORS erlauben (für Frontend-Zugriff)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # <- SEHR WICHTIG! (Frontend darf connecten)
+    allow_credentials=True,
     allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # KI-Modell laden (nur wenn die Datei existiert)
@@ -82,6 +84,11 @@ async def detect_pattern(ticker: str):
 @app.get("/stock/{ticker}")
 async def get_stock(ticker: str, interval: str = "1d"):
     data = yf.download(ticker, period="60d", interval=interval)
+
+    # MultiIndex prüfen und auflösen
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.droplevel(1)
+
     return data.reset_index().to_dict(orient="records")
 
 @app.get("/analyze/{ticker}")

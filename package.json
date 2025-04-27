@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "lightweight-charts": "^5.0.6",
+    "react-select": "^5.10.1"
+  }
+}
