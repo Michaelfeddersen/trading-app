@@ -16,3 +16,4 @@ Dies ist eine Fullstack Trading-Applikation bestehend aus:
 ```bash
 cd backend
 uvicorn main:app --reload
+test
