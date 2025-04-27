@@ -2,24 +2,25 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 import pandas as pd
-from tensorflow.keras.models import load_model  # Diesen Import hinzufügen
+import numpy as np
+from tensorflow.keras.models import load_model
 
 app = FastAPI()
 
-# CORS erlauben (für Frontend-Zugriff)
+# CORS erlauben (Frontend-Zugriff)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # <- SEHR WICHTIG! (Frontend darf connecten)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# KI-Modell laden (nur wenn die Datei existiert)
+# KI-Modell laden
 try:
     model = load_model('ml_model/pattern_model.h5')
-except:
-    print("Warnung: KI-Modell konnte nicht geladen werden. Stelle sicher, dass die Datei existiert.")
+except Exception:
+    print("Warnung: KI-Modell konnte nicht geladen werden.")
     model = None
 
 @app.get("/health")
@@ -31,84 +32,122 @@ async def detect_pattern(ticker: str):
     if model is None:
         raise HTTPException(status_code=501, detail="KI-Modell nicht verfügbar")
     
-# 1. Daten holen
     data = yf.download(ticker, period="60d", interval="1d")
 
-# Wenn MultiIndex → Ebene 1 droppen
     if isinstance(data.columns, pd.MultiIndex):
-     data.columns = data.columns.droplevel(1)
+        data.columns = data.columns.droplevel(1)
 
-# Prüfen ob Daten geladen wurden
     if data.empty:
-     raise HTTPException(status_code=400, detail="Keine Marktdaten verfügbar")
+        raise HTTPException(status_code=400, detail="Keine Marktdaten verfügbar")
 
     required_columns = ['Open', 'High', 'Low', 'Close']
-
-# Prüfen ob wirklich alle Spalten vorhanden sind
-    if not set(required_columns).issubset(set(data.columns)):
-        raise HTTPException(
-        status_code=400,
-        detail=f"Fehlende Spalten in Marktdaten: {set(required_columns) - set(data.columns)}"
-    )
-
-# Jetzt sicher: Spalten vorhanden → NaN entfernen
-    data = data.dropna(subset=required_columns)
-
-    if data.shape[0] < 50:
+    if not set(required_columns).issubset(data.columns):
         raise HTTPException(
             status_code=400,
-         detail=f"Nicht genügend Kursdaten vorhanden ({data.shape[0]} Tage, mind. 50 nötig)"
-    )
+            detail=f"Fehlende Spalten: {set(required_columns) - set(data.columns)}"
+        )
 
-# 2. Daten vorbereiten
+    data = data.dropna(subset=required_columns)
+
+    if len(data) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Nicht genügend Kursdaten ({len(data)} Tage, mind. 50 nötig)"
+        )
+
     data_array = data[required_columns].values[-50:]
 
-# 3. Vorhersage machen
     try:
-         prediction = model.predict(data_array.reshape(1, 50, 4))
+        prediction = model.predict(data_array.reshape(1, 50, 4))
     except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Fehler bei Modellvorhersage: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Fehler bei Modellvorhersage: {str(e)}")
 
     confidence = float(prediction[0][0])
 
-# 4. Ergebnis zurückgeben
     return {
-     "pattern": "Head and Shoulders" if confidence > 0.5 else "No pattern",
-     "confidence": confidence,
-     "entry_point": float(data['Close'].iloc[-1])
-}
-
-
-
+        "pattern": "Head and Shoulders" if confidence > 0.5 else "No pattern",
+        "confidence": confidence,
+        "entry_point": float(data['Close'].iloc[-1])
+    }
 
 @app.get("/stock/{ticker}")
 async def get_stock(ticker: str, interval: str = "1d"):
     data = yf.download(ticker, period="60d", interval=interval)
 
-    # MultiIndex prüfen und auflösen
     if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(1)
+        data.columns = data.columns.get_level_values(0)
 
-    return data.reset_index().to_dict(orient="records")
+    if data.empty:
+        raise HTTPException(status_code=404, detail="Keine Kursdaten gefunden")
+
+    data = data.reset_index()
+
+    # Nur die wichtigen Spalten
+    keep_columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+    available_columns = [col for col in keep_columns if col in data.columns]
+    data = data[available_columns]
+
+    data["Date"] = data["Date"].astype(str)
+
+    # SMA und RSI
+    if 'Close' in data.columns:
+        data['SMA_14'] = data['Close'].rolling(window=14).mean()
+
+        delta = data['Close'].diff()
+        gain = delta.clip(lower=0).rolling(window=14).mean()
+        loss = -delta.clip(upper=0).rolling(window=14).mean()
+        rs = gain / loss
+        data['RSI_14'] = 100 - (100 / (1 + rs))
+    else:
+        data['SMA_14'] = None
+        data['RSI_14'] = None
+
+    # GANZ WICHTIG: infinities + NaN explizit durch None ersetzen
+    import numpy as np
+    data = data.replace([np.inf, -np.inf], np.nan)
+    data = data.fillna(value=np.nan)
+
+    # Umwandlung sicher machen
+    def safe_float(val):
+        if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+            return None
+        return float(val)
+
+    def safe_int(val):
+        if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+            return None
+        return int(val)
+
+    result = []
+    for _, row in data.iterrows():
+        result.append({
+            "Date": row.get("Date"),
+            "Open": safe_float(row.get("Open")),
+            "High": safe_float(row.get("High")),
+            "Low": safe_float(row.get("Low")),
+            "Close": safe_float(row.get("Close")),
+            "Volume": safe_int(row.get("Volume")),
+            "SMA_14": safe_float(row.get("SMA_14")),
+            "RSI_14": safe_float(row.get("RSI_14")),
+        })
+
+    return result
+
 
 @app.get("/analyze/{ticker}")
 async def analyze_stock(ticker: str):
     try:
-        # 1. Aktiendaten holen
         data = yf.download(ticker, period="60d", interval="1d", auto_adjust=False)
         if data.empty:
             raise HTTPException(status_code=404, detail="Keine Daten verfügbar")
 
         data = data.reset_index()
-        print("Daten erhalten:", data.columns)  # Debug
 
-        # 2. Werte explizit als Float extrahieren
         last_close = float(data["Close"].iloc[-1])
         moving_avg = float(data["Close"].rolling(window=10).mean().iloc[-1])
 
-        # 3. Signal bestimmen
         pattern = "Bullish (Preis > 10-Tage-Durchschnitt)" if last_close > moving_avg else "Bearish (Preis < 10-Tage-Durchschnitt)"
-        
+
         return {
             "ticker": ticker,
             "pattern": pattern,
@@ -119,6 +158,3 @@ async def analyze_stock(ticker: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analyse fehlgeschlagen: {str(e)}")
-    
-
-    
