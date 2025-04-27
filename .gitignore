@@ -1,7 +1,3 @@
-frontend/node_modules/
-frontend/dist/
-frontend/.env
-# Öffne .gitignore im Editor und füge diese Einträge hinzu:
 echo "frontend/node_modules/" >> .gitignore
 echo "frontend/dist/" >> .gitignore
 echo ".env" >> .gitignore
